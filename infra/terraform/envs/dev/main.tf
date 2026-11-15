@@ -20,3 +20,11 @@ module "k3s_node" {
 output "k3s_public_ip" {
   value = module.k3s_node.public_ip
 }
+
+resource "local_file" "ansible_inventory" {
+  filename = "${path.module}/../../../ansible/inventory/dev.ini"   # prod.ini in envs/prod
+  content  = <<-EOT
+    [k3s]
+    ${module.k3s_node.public_ip} ansible_user=ubuntu
+  EOT
+}
