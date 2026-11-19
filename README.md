@@ -36,7 +36,7 @@ flowchart LR
 | Compute | EC2 `t3.small` running k3s | Fits the AWS Free plan; k3s is a certified, lightweight Kubernetes |
 | Access | Security Group: SSH (22) and Kubernetes API (6443) restricted to my IP | Least exposure |
 
-Design decisions are recorded in [`docs/decisions.md`](docs/decisions.md).
+
 
 ---
 
@@ -90,8 +90,9 @@ terraform destroy
 - [x] **Workstation**: WSL2, Docker, Terraform, AWS CLI
 - [x] **Remote state**: S3 backend with versioning and native locking
 - [x] **Network**: reusable VPC module
+- [x] **Kubernetes**: k3s installed manually to test the commands needed
 - [x] **Compute**: reusable k3s-node module (EC2 + Security Group)
-- [ ] **Kubernetes**: k3s installed automatically at boot
+- [x] **Kubernetes**: k3s installed automatically at boot
 - [ ] **GitOps**: ArgoCD (app-of-apps), Pitstop deployed to dev and prod
 - [ ] **Supply chain**: SonarQube, SBOM (Syft → Dependency-Track), Cosign signing, Kyverno policy rejecting unsigned images
 - [ ] **Secrets**: Vault + External Secrets Operator, Sealed Secrets

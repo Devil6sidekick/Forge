@@ -25,6 +25,6 @@ resource "local_file" "ansible_inventory" {
   filename = "${path.module}/../../../ansible/inventory/dev.ini"   # prod.ini in envs/prod
   content  = <<-EOT
     [k3s]
-    ${module.k3s_node.public_ip} ansible_user=ubuntu
+    forge-dev-k3s ansible_host=${module.k3s_node.public_ip} ansible_user=ubuntu
   EOT
 }

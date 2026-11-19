@@ -8,4 +8,7 @@ crash.log
 # Secrets
 .env
 *.pem
-EOF
+
+
+#Ansible
+/infra/ansible/inventory/*.ini
