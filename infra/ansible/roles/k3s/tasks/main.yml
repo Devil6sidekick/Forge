@@ -21,13 +21,14 @@
 - name: Copy the kubeconfig to my PC
   ansible.builtin.fetch:
     src: /etc/rancher/k3s/k3s.yaml
-    dest: "{{ lookup('env', 'HOME') }}/.kube/forge-k3s.yaml"
+    dest: "{{ lookup('env', 'HOME') }}/.kube/{{ inventory_hostname }}.yaml"
+    mode: "0755"
     flat: true
 
 - name: Point the kubeconfig to the public IP
   delegate_to: localhost
   become: false
   ansible.builtin.replace:
-    path: "{{ lookup('env', 'HOME') }}/.kube/forge-k3s.yaml"
+    path: "{{ lookup('env', 'HOME') }}/.kube/{{ inventory_hostname}}.yaml"
     regexp: 'https://(127\.0\.0\.1|localhost):6443'
     replace: "https://{{ ansible_host }}:6443"
