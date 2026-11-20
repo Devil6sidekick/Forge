@@ -1,0 +1,15 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChart                # "install this Helm chart"
+metadata:
+  name: argocd
+  namespace: kube-system       # HelmChart objects live here
+spec:
+  repo: https://argoproj.github.io/argo-helm   # where the chart is
+  chart: argo-cd                               # which chart
+  targetNamespace: argocd                      # where to install ArgoCD
+  createNamespace: true                        # create the namespace if needed
+  valuesContent: |-                            # our settings
+    dex:
+      enabled: false           # no SSO
+    notifications:
+      enabled: false           # no notifications

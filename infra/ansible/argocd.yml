@@ -1,0 +1,6 @@
+- name: Install ArgoCD on the hub
+  hosts: argocd
+  become: true
+  gather_facts: false
+  roles:
+    - argocd

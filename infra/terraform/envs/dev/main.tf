@@ -1,3 +1,12 @@
+
+data "http" "my_ip" {
+  url = "https://checkip.amazonaws.com"
+}
+
+locals {
+  my_ip = "${chomp(data.http.my_ip.response_body)}/32"
+}
+
 module "vpc" {
   source = "../../modules/vpc"
 
@@ -13,7 +22,7 @@ module "argocd_node" {
   vpc_id        = module.vpc.vpc_id           # ← VPC output
   subnet_id     = module.vpc.public_subnet_id # ← VPC output
   instance_type = "t3.small"
-  my_ip = var.my_ip # format "x.x.x.x/32"
+  my_ip = local.my_ip # format "x.x.x.x/32"
   public_key    = file(pathexpand("~/.ssh/id_ed25519.pub"))
 }
 
@@ -24,7 +33,7 @@ module "apps_node" {
   vpc_id        = module.vpc.vpc_id           # ← VPC output
   subnet_id     = module.vpc.public_subnet_id # ← VPC output
   instance_type = "t3.small"
-  my_ip = var.my_ip # format "x.x.x.x/32"
+  my_ip = local.my_ip # format "x.x.x.x/32"
   public_key    = file(pathexpand("~/.ssh/id_ed25519.pub"))
 }
 

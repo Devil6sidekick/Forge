@@ -1,0 +1,35 @@
+# --- Swap: backup RAM on disk ---
+- name: Create a 2 GB swap file
+  ansible.builtin.command:
+    cmd: fallocate -l 2G /swapfile
+    creates: /swapfile
+  register: swapfile
+
+- name: Restrict swap file permissions
+  ansible.builtin.file:
+    path: /swapfile
+    mode: "0600"
+
+- name: Format and enable the swap
+  ansible.builtin.shell: mkswap /swapfile && swapon /swapfile
+  when: swapfile.changed
+
+- name: Keep the swap after a reboot
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    line: "/swapfile none swap sw 0 0"
+
+# --- ArgoCD ---
+- name: Drop the ArgoCD HelmChart into the k3s auto-deploy folder
+  ansible.builtin.copy:
+    src: argocd-helmchart.yaml
+    dest: /var/lib/rancher/k3s/server/manifests/argocd.yaml
+    mode: "0600"
+
+- name: Wait for the ArgoCD server to be ready
+  ansible.builtin.command: k3s kubectl -n argocd rollout status deployment/argocd-server --timeout=60s
+  register: rollout
+  until: rollout.rc == 0
+  retries: 10
+  delay: 15
+  changed_when: false
