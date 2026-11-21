@@ -1,8 +1,8 @@
 # Forge
 
-**GitOps platform on AWS: Terraform, Ansible, k3s and ArgoCD**
+**GitOps platform on AWS: Terraform, Ansible, k3s and ArgoCD (hub-and-spoke)**
 
-Forge is a hands-on platform engineering project. Infrastructure is provisioned with Terraform on AWS, configured with Ansible, and runs two lightweight Kubernetes clusters in a **hub-and-spoke** layout: a management cluster running ArgoCD deploys applications from Git onto a separate workload cluster.
+Forge is a hands-on platform engineering project. Infrastructure is provisioned with Terraform on AWS and configured with Ansible. It runs two lightweight Kubernetes clusters in a **hub-and-spoke** layout: a management cluster running ArgoCD deploys applications from this Git repository onto a separate workload cluster, over the private network.
 
 > 🚧 **Work in progress**: built step by step, see the [roadmap](#roadmap).
 
@@ -12,32 +12,40 @@ Forge is a hands-on platform engineering project. Infrastructure is provisioned 
 
 ```mermaid
 flowchart LR
-    dev[Developer<br/>WSL2 · Terraform · Ansible] -->|terraform apply| aws
-    dev -->|ansible-playbook| hub
-    dev -->|ansible-playbook| spoke
+    gh[(GitHub<br/>this repo)]
+    dev[Developer<br/>Terraform · Ansible · kubectl]
 
     subgraph aws[AWS eu-west-3 Paris]
         s3[(S3 bucket<br/>Terraform state)]
         subgraph vpc[VPC 10.0.0.0/16 · public subnet 10.0.1.0/24]
-            hub[EC2 t3.small<br/>forge-dev-argocd<br/>k3s + ArgoCD]
-            spoke[EC2 t3.small<br/>forge-dev-apps<br/>k3s + demo app]
+            subgraph hub[EC2 forge-dev-argocd · hub]
+                argocd[k3s + ArgoCD]
+            end
+            subgraph spoke[EC2 forge-dev-apps · spoke]
+                app[k3s + podinfo]
+            end
         end
-        igw[Internet Gateway]
     end
 
+    dev -->|terraform apply| aws
     dev -.->|state + lock| s3
-    hub -->|Kubernetes API 6443<br/>private network| spoke
-    vpc --> igw --> internet((Internet))
+    dev -->|ansible-playbook site.yml| hub
+    dev -->|ansible-playbook site.yml| spoke
+    dev -->|git push| gh
+    argocd -->|watches| gh
+    argocd -->|deploys via Kubernetes API 6443<br/>private network| app
 ```
 
 | Component | Choice | Why |
 |---|---|---|
 | Terraform state | S3 bucket, versioning, native locking (`use_lockfile`) | Remote, recoverable state; no DynamoDB needed (Terraform ≥ 1.10) |
-| Network | 1 VPC, 1 public subnet, Internet Gateway | Minimal network; no NAT Gateway (paid, not needed) |
+| Network | 1 VPC, 1 public subnet, Internet Gateway | Minimal network; no NAT Gateway (paid, not needed for a lab) |
 | Compute | 2 × EC2 `t3.small`, same reusable `k3s-node` module | Fits the AWS Free plan; one module, called once per node |
-| Kubernetes | k3s installed by an Ansible role | Certified, lightweight Kubernetes; idempotent install |
-| GitOps | Hub-and-spoke: ArgoCD on one cluster deploys to the other | Mirrors how ArgoCD manages several clusters in practice |
-| Access | SSH (22) and Kubernetes API (6443) restricted to my IP; hub → spoke allowed by security group reference | Least exposure; the rule survives node re-creation |
+| Kubernetes | k3s installed by an idempotent Ansible role | Certified, lightweight Kubernetes |
+| ArgoCD | Installed on the hub through the k3s Helm controller (dex and notifications disabled, 2 GB swap) | One file in the k3s auto-deploy folder; trimmed to fit 2 GB of RAM (measured) |
+| Cluster registration | Ansible reads the spoke's credentials and writes an ArgoCD cluster Secret on the hub | Fully automated; credentials never touch Git or the terminal output |
+| GitOps | ArgoCD `Application` with automated sync, `selfHeal` and `prune` | Git is the single source of truth; manual drift is reverted |
+| Access | SSH (22) and Kubernetes API (6443) restricted to my IP; hub → spoke allowed by security group reference; ArgoCD UI only through `kubectl port-forward` | Least exposure; nothing is publicly reachable |
 
 Design decisions are recorded in [`docs/decisions.md`](docs/decisions.md).
 
@@ -49,21 +57,26 @@ Design decisions are recorded in [`docs/decisions.md`](docs/decisions.md).
 forge/
 ├── infra/
 │   ├── terraform/
-│   │   ├── state-bucket/          # one-time setup: S3 bucket for the remote state (local state)
+│   │   ├── state-bucket/              # one-time setup: S3 bucket for the remote state
 │   │   ├── modules/
-│   │   │   ├── vpc/               # VPC, public subnet, Internet Gateway, route table
-│   │   │   └── k3s-node/          # EC2, Security Group, SSH key pair
+│   │   │   ├── vpc/                   # VPC, public subnet, Internet Gateway, route table
+│   │   │   └── k3s-node/              # EC2, Security Group, SSH key pair
 │   │   └── envs/
-│   │       └── dev/               # calls the modules twice (hub + spoke), writes the Ansible inventory
+│   │       └── dev/                   # hub + spoke nodes, hub → spoke rule, Ansible inventory
 │   └── ansible/
-│       ├── ansible.cfg
-│       ├── inventory/             # generated by Terraform (git-ignored)
+│       ├── inventory/                 # generated by Terraform (git-ignored)
 │       ├── roles/
-│       │   └── k3s/               # installs k3s, fetches a kubeconfig per host
-│       └── k3s.yml                # playbook: k3s on every node
-├── gitops/                        # (in progress) ArgoCD applications
+│       │   ├── k3s/                   # installs k3s, fetches one kubeconfig per node
+│       │   └── argocd/                # swap, ArgoCD (HelmChart), spoke cluster registration
+│       ├── k3s.yml                    # k3s on every node
+│       ├── argocd.yml                 # ArgoCD on the hub
+│       └── site.yml                   # runs everything in order
+├── gitops/
+│   ├── argocd/                        # ArgoCD Applications (what to deploy, from where, to where)
+│   └── apps/
+│       └── podinfo/                   # demo app manifests (Deployment + Service)
 └── docs/
-    └── decisions.md               # architecture decision records
+    └── decisions.md                   # architecture decision records
 ```
 
 ---
@@ -77,20 +90,26 @@ forge/
 cd infra/terraform/state-bucket
 terraform init && terraform apply
 
-# 2. Create the network and the two nodes (also writes the Ansible inventory)
+# 2. Network + hub and spoke nodes (also writes the Ansible inventory)
 cd ../envs/dev
-cp terraform.tfvars.example terraform.tfvars   # set my_ip (curl -s https://checkip.amazonaws.com)
 terraform init && terraform apply
 
-# 3. Install k3s on both nodes
+# 3. k3s on both nodes, ArgoCD on the hub, spoke registered in ArgoCD
 cd ../../../ansible
-ansible-playbook -i inventory/dev.ini k3s.yml
+ansible-playbook -i inventory/dev.ini site.yml
 
-# 4. Talk to a cluster (one kubeconfig per node)
-export KUBECONFIG=~/.kube/forge-dev-apps.yaml     # or forge-dev-argocd.yaml
-kubectl get nodes
+# 4. Deploy the demo app (ArgoCD then keeps it in sync with Git)
+export KUBECONFIG=~/.kube/forge-dev-argocd.yaml
+kubectl apply -f ../../gitops/argocd/podinfo.yaml
 
-# 5. Tear down when done
+# 5. Open the ArgoCD UI → https://localhost:8080 (user: admin)
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d; echo
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+
+# 6. Open the demo app → http://localhost:9898
+kubectl --kubeconfig ~/.kube/forge-dev-apps.yaml port-forward -n podinfo svc/podinfo 9898:9898
+
+# 7. Tear down when done
 cd ../terraform/envs/dev && terraform destroy
 ```
 
@@ -104,17 +123,19 @@ cd ../terraform/envs/dev && terraform destroy
 - [x] **Compute**: reusable k3s-node module (EC2 + Security Group)
 - [x] **Kubernetes**: k3s installed by an idempotent Ansible role (validated by hand first)
 - [x] **Hub-and-spoke**: two nodes, private hub → spoke access on 6443
-- [ ] **GitOps**: ArgoCD on the hub, workload cluster registered, demo app deployed from Git
+- [x] **ArgoCD**: installed on the hub with Ansible through the k3s Helm controller
+- [x] **Cluster registration**: spoke registered in ArgoCD automatically by Ansible
+- [x] **First GitOps app**: podinfo deployed on the spoke from Git (automated sync, selfHeal, prune)
 - [ ] **App-of-apps**: every application declared in Git, no manual `kubectl apply`
 - [ ] **Supply chain**: SBOM, image signing, policy rejecting unsigned images
-- [ ] **Secrets**: Sealed Secrets / Vault
+- [ ] **Secrets**: Sealed Secrets
 - [ ] **Observability**: Prometheus, Grafana
 
 ---
 
 ## Tech stack
 
-`Terraform` · `AWS (VPC, EC2, S3, IAM)` · `Ansible` · `k3s` · `Docker` · *in progress:* `ArgoCD`
+`Terraform` · `AWS (VPC, EC2, S3, IAM)` · `Ansible` · `k3s` · `Helm` · `ArgoCD` · `Docker`
 
 ---
 
