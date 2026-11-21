@@ -62,7 +62,7 @@ resource "local_file" "ansible_inventory" {
   filename = "${path.module}/../../../ansible/inventory/dev.ini"   # prod.ini in envs/prod
   content  = <<-EOT
     [apps]
-    forge-dev-apps ansible_host=${module.apps_node.public_ip} ansible_user=ubuntu
+        forge-dev-apps ansible_host=${module.apps_node.public_ip} ansible_user=ubuntu private_ip=${module.apps_node.private_ip}
 
     [argocd]
     forge-dev-argocd ansible_host=${module.argocd_node.public_ip} ansible_user=ubuntu

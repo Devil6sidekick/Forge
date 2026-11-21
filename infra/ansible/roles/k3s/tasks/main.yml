@@ -32,3 +32,23 @@
     path: "{{ lookup('env', 'HOME') }}/.kube/{{ inventory_hostname}}.yaml"
     regexp: 'https://(127\.0\.0\.1|localhost):6443'
     replace: "https://{{ ansible_host }}:6443"
+
+# --- Register the apps cluster in ArgoCD ---
+- name: Read the kubeconfig on the apps node
+  ansible.builtin.slurp:
+    src: /etc/rancher/k3s/k3s.yaml
+  delegate_to: "{{ groups['apps'][0] }}"
+  register: apps_kubeconfig_raw
+
+- name: Extract the apps cluster address and credentials
+  ansible.builtin.set_fact:
+    apps_kcfg: "{{ apps_kubeconfig_raw.content | b64decode | from_yaml }}"
+    apps_private_ip: "{{ hostvars[groups['apps'][0]].private_ip }}"
+  no_log: true
+
+- name: Register the apps cluster in ArgoCD
+  ansible.builtin.template:
+    src: ../../argocd/templates/apps-cluster-secret.yaml.j2
+    dest: /var/lib/rancher/k3s/server/manifests/apps-cluster.yaml
+    mode: "0600"
+  no_log: true
