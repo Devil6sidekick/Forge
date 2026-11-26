@@ -14,7 +14,7 @@ permissions:
   id-token: write                    # get an OIDC identity → keyless signing
 
 env:
-  IMAGE: ghcr.io/Devil6sidekick/forge-web
+  IMAGE: ghcr.io/devil6sidekick/forge-web
 
 jobs:
   build-scan-sign:
