@@ -33,3 +33,9 @@
   retries: 10
   delay: 15
   changed_when: false
+
+- name: Create the root Application (app-of-apps)
+  ansible.builtin.template:
+    src: root-app.yaml.j2
+    dest: /var/lib/rancher/k3s/server/manifests/root-app.yaml
+    mode: "0600"
